@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小红书分享</title>
+    <script src="https://fe-static.xhscdn.com/biz-static/goten/xhs-1.0.1.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+            background-color: #f8f8f8;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #fe2c55;
+        }
+        button {
+            background-color: #fe2c55;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        button:hover {
+            background-color: #e6294f;
+        }
+        .loading {
+            margin: 20px 0;
+            font-size: 16px;
+        }
+        .error {
+            color: red;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>小红书分享</h1>
+        <div id="loading" class="loading">正在加载数据...</div>
+        <div id="error" class="error" style="display: none;"></div>
+        <button id="shareButton" style="display: none;" onclick="xhsFn()">打开小红书</button>
+    </div>
+
+    <script>
+        // 全局变量存储数据
+        let postData = null;
+        let signatureData = null;
+
+        // 从URL获取ID参数
+        function getPostId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('id');
+        }
+
+        // 检测是否在微信内置浏览器中打开
+        function isWechat() {
+            return /MicroMessenger/i.test(navigator.userAgent);
+        }
+
+        // 检测是否为安卓设备
+        function isAndroid() {
+            return /Android/i.test(navigator.userAgent);
+        }
+
+        // 打开外部浏览器
+        function openInBrowser() {
+            // 获取当前页面URL（带参数）
+            const currentUrl = window.location.href;
+            
+            // 尝试通过特殊链接跳转到外部浏览器
+            const redirectUrl = `googlechrome://browse?url=${encodeURIComponent(currentUrl)}`;
+            
+            // 创建一个不可见的A标签并点击它来实现跳转
+            const link = document.createElement('a');
+            link.href = redirectUrl;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            
+            // 如果chrome方式不可用，尝试通过intent方式打开
+            setTimeout(() => {
+                window.location.href = `intent://${window.location.host}${window.location.pathname}${window.location.search}#Intent;scheme=http;package=com.android.chrome;end`;
+            }, 500);
+        }
+
+        // 获取小红书帖子数据
+        async function getPostData(postId) {
+            try {
+                const response = await fetch(`http://47.238.216.176:5000/api/posts/${postId}`);
+                if (!response.ok) {
+                    throw new Error(`获取帖子数据失败: ${response.status} ${response.statusText}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error('获取帖子数据出错:', error);
+                throw error;
+            }
+        }
+
+        // 获取签名数据
+        async function getSignatureData() {
+            try {
+                const response = await fetch('http://47.238.216.176:5000/api/signature');
+                if (!response.ok) {
+                    throw new Error(`获取签名数据失败: ${response.status} ${response.statusText}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error('获取签名数据出错:', error);
+                throw error;
+            }
+        }
+
+        // 小红书分享函数
+        function xhsFn() {
+            if (!postData || !signatureData) {
+                showError('数据加载失败，请刷新页面重试');
+                return;
+            }
+
+            console.log('分享数据:', postData);
+            console.log('签名数据:', signatureData);
+
+            // 准备 verifyConfig 参数，处理不同的字段名称可能性
+            const verifyConfig = {
+                appKey: signatureData.appKey || signatureData.app_key,
+                signature: signatureData.signature,
+                timestamp: signatureData.timestamp,
+                nonce: signatureData.nonce
+            };
+
+            console.log('准备分享，verifyConfig:', verifyConfig);
+
+            xhs.share({
+                shareInfo: {
+                    type: postData.type,
+                    title: postData.title,
+                    content: postData.content,
+                    images: postData.images,
+                    video: postData.video || '',
+                    cover: postData.cover || ''
+                },
+                verifyConfig: verifyConfig,
+                fail: (e) => {
+                    console.log('分享失败:', e);
+                    showError(`分享失败: ${e.message || JSON.stringify(e)}`);
+                },
+                success: () => {
+                    console.log('分享成功');
+                }
+            });
+        }
+
+        // 显示错误信息
+        function showError(message) {
+            const errorElement = document.getElementById('error');
+            errorElement.textContent = message;
+            errorElement.style.display = 'block';
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        // 初始化页面
+        async function initPage() {
+            try {
+                // 检测安卓微信环境并自动跳转
+                if (isWechat() && isAndroid()) {
+                    console.log('检测到安卓微信环境，准备跳转到外部浏览器');
+                    document.getElementById('loading').textContent = '正在跳转到外部浏览器...';
+                    openInBrowser();
+                    return;
+                }
+                
+                const postId = getPostId();
+                if (!postId) {
+                    showError('未提供帖子ID，请检查URL参数');
+                    return;
+                }
+
+                // 并行获取数据
+                const [post, signature] = await Promise.all([
+                    getPostData(postId),
+                    getSignatureData()
+                ]);
+
+                postData = post;
+                signatureData = signature;
+
+                // 显示分享按钮
+                document.getElementById('loading').textContent = '数据加载成功，点击按钮打开小红书';
+                document.getElementById('shareButton').style.display = 'inline-block';
+                
+                // 如果是移动设备，自动执行分享
+                if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+                    setTimeout(xhsFn, 1000); // 延迟1秒执行，确保页面完全加载
+                }
+            } catch (error) {
+                showError(`加载失败: ${error.message}`);
+            }
+        }
+
+        // 页面加载完成后执行初始化
+        window.onload = initPage;
+    </script>
+</body>
+</html> 
