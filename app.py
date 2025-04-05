@@ -5,9 +5,11 @@ import time
 import os
 import traceback
 from datetime import datetime
+from flask_cors import CORS  # 导入Flask-CORS扩展
 
 print("开始初始化Flask应用...")
 app = Flask(__name__)
+CORS(app)  # 启用CORS支持，允许所有域的跨域请求
 
 # MySQL数据库配置
 db_config = {
