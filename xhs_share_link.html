@@ -164,9 +164,121 @@
         // 全局变量存储数据
         let postData = null;
         let signatureData = null;
-// 添加全局变量跟踪当前图片索引
-let currentImageIndex = 0;
+        let currentImageIndex = 0;
         let totalImages = 0;
+        let startX = 0;
+        let isDragging = false;
+
+        // 初始化触摸事件
+        function initTouchEvents() {
+            const slider = document.querySelector('.image-slider');
+            slider.addEventListener('touchstart', handleTouchStart, {passive: false});
+            slider.addEventListener('touchmove', handleTouchMove, {passive: false});
+            slider.addEventListener('touchend', handleTouchEnd);
+        }
+
+        function handleTouchStart(e) {
+            startX = e.touches[0].clientX;
+            isDragging = true;
+        }
+
+        function handleTouchMove(e) {
+            if (!isDragging) return;
+            e.preventDefault();
+        }
+
+        function handleTouchEnd(e) {
+            if (!isDragging) return;
+            
+            const endX = e.changedTouches[0].clientX;
+            const diffX = startX - endX;
+            
+            if (diffX > 50) {
+                slideImage(1); // 向左滑动，显示下一张
+            } else if (diffX < -50) {
+                slideImage(-1); // 向右滑动，显示上一张
+            }
+            
+            isDragging = false;
+        }
+
+        // 在initPage函数中初始化触摸事件
+        async function initPage() {
+            try {
+                // 检测安卓微信环境并自动跳转
+                if (isWechat() && isAndroid()) {
+                    console.log('检测到安卓微信环境，准备跳转到外部浏览器');
+                    document.getElementById('loading').textContent = '点击右上角三个点后，点击默认浏览器打开...';
+                    openInBrowser();
+                    return;
+                }
+                
+                const postId = getPostId();
+                if (!postId) {
+                    showError('未提供帖子ID，请检查URL参数');
+                    return;
+                }
+
+                // 并行获取数据
+                const [post, signature] = await Promise.all([
+                    getPostData(postId),
+                    getSignatureData()
+                ]);
+
+                postData = post;
+                signatureData = signature;
+
+                // 显示笔记内容
+                if (post.title) {
+                    document.getElementById('noteTitle').textContent = post.title;
+                }
+                if (post.content) {
+                    document.getElementById('noteContent').textContent = post.content;
+                }
+                // if (post.images && post.images.length > 0) {
+                //     const imagesContainer = document.getElementById('noteImages');
+                //     post.images.forEach(imgUrl => {
+                //         const img = document.createElement('img');
+                //         img.src = imgUrl;
+                //         imagesContainer.appendChild(img);
+                //     });
+                // }
+                if (post.images && post.images.length > 0) {
+                    const imagesContainer = document.getElementById('noteImages');
+                    const dotsContainer = document.querySelector('.slider-dots');
+                    
+                    post.images.forEach((imgUrl, index) => {
+                        const img = document.createElement('img');
+                        img.src = imgUrl;
+                        imagesContainer.appendChild(img);
+                        
+                        // 添加导航点
+                        const dot = document.createElement('span');
+                        dot.onclick = () => {
+                            currentImageIndex = index;
+                            imagesContainer.style.transform = `translateX(-${currentImageIndex * 100}%)`;
+                            updateDots();
+                        };
+                        dotsContainer.appendChild(dot);
+                    });
+                    
+                    totalImages = post.images.length;
+                    updateDots();
+                    
+                    // 如果只有一张图片，隐藏导航按钮
+                    if (totalImages <= 1) {
+                        document.querySelectorAll('.slider-nav').forEach(btn => btn.style.display = 'none');
+                    }
+                }
+                // 显示分享按钮
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('shareButton').style.display = 'inline-block';
+                
+                // 移除自动执行的分享逻辑
+            } catch (error) {
+                showError(`加载失败: ${error.message}`);
+            }
+        }
 
         // 图片滑动函数
         function slideImage(direction) {
@@ -373,6 +485,7 @@ let currentImageIndex = 0;
                         document.querySelectorAll('.slider-nav').forEach(btn => btn.style.display = 'none');
                     }
                 }
+                initTouchEvents(); 
                 // 显示分享按钮
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('shareButton').style.display = 'inline-block';
