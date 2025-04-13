@@ -45,6 +45,29 @@
             color: red;
             margin: 20px 0;
         }
+        .next-note-button {
+            background-color: #fe2c55;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 20px;
+            margin-left: 10px;
+        }
+        .next-note-button:hover {
+            background-color: #e6294f;
+        }
+        .next-note-button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .button-group {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
     </style>
 </head>
 <body>
@@ -60,7 +83,10 @@
         </div>
         <div id="loading" class="loading">正在加载数据...</div>
         <div id="error" class="error" style="display: none;"></div>
-        <button id="shareButton" style="display: none;" onclick="xhsFn()">分享到小红书</button>
+        <div class="button-group">
+            <button id="shareButton" style="display: none;" onclick="xhsFn()">分享到小红书</button>
+            <button id="nextNoteButton" class="next-note-button" style="display: none;" onclick="loadNextNote()">下一篇笔记</button>
+        </div>
     </div>
 
     <style>
@@ -144,6 +170,10 @@
         let totalImages = 0;
         let startX = 0;
         let isDragging = false;
+        let currentIdentifier = null;
+        let nextIdentifier = null;
+        // const API_DOMAIN = 'https://laolin.vip';  // API域名配置
+        const API_DOMAIN = 'http://127.0.0.1:5000';
 
         // 初始化触摸事件
         function initTouchEvents() {
@@ -178,10 +208,131 @@
             isDragging = false;
         }
 
-        // 在initPage函数中初始化触摸事件
+        // 获取下一篇笔记数据
+        async function loadNextNote() {
+            try {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('error').style.display = 'none';
+                document.getElementById('nextNoteButton').disabled = true;
+
+                console.log('当前笔记数据:', {
+                    currentIdentifier,
+                    postId: postData?.id,
+                    nextIdentifier
+                });
+
+                // 构建请求URL
+                let url = `${API_DOMAIN}/api/posts?identifier=${encodeURIComponent(currentIdentifier)}`;
+                if (postData && postData.id) {
+                    url += `&id=${postData.id}`;
+                }
+
+                console.log('请求下一篇笔记，URL:', url);
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        showError('没有更多笔记了');
+                        document.getElementById('nextNoteButton').style.display = 'none';
+                        return;
+                    }
+                    throw new Error(`获取下一篇笔记失败: ${response.status} ${response.statusText}`);
+                }
+
+                const post = await response.json();
+                console.log('获取到的下一篇笔记:', post);
+
+                // 检查是否获取到新笔记
+                if (post.id === postData?.id) {
+                    showError('没有更多笔记了');
+                    document.getElementById('nextNoteButton').style.display = 'none';
+                    return;
+                }
+
+                const signature = await getSignatureData();
+
+                // 更新当前标识符
+                currentIdentifier = post.identifier;
+                nextIdentifier = post.next_identifier || post.nextIdentifier;
+
+                // 更新页面数据
+                updatePageData(post, signature);
+
+                // 更新按钮状态
+                document.getElementById('nextNoteButton').disabled = false;
+            } catch (error) {
+                console.error('加载下一篇笔记失败:', error);
+                showError(`加载下一篇笔记失败: ${error.message}`);
+                document.getElementById('nextNoteButton').disabled = false;
+            }
+        }
+
+        // 更新页面数据
+        function updatePageData(post, signature) {
+            postData = post;
+            signatureData = signature;
+
+            // 清空现有内容
+            document.getElementById('noteTitle').textContent = '';
+            document.getElementById('noteContent').textContent = '';
+            document.getElementById('noteImages').innerHTML = '';
+            document.querySelector('.slider-dots').innerHTML = '';
+
+            // 显示笔记内容
+            if (post.title) {
+                document.getElementById('noteTitle').textContent = post.title;
+            }
+            if (post.content) {
+                document.getElementById('noteContent').textContent = post.content;
+            }
+
+            // 重置图片轮播相关变量
+            currentImageIndex = 0;
+            totalImages = 0;
+            document.querySelector('.image-slider').style.display = 'block';
+
+            if (post.images && post.images.length > 0) {
+                const imagesContainer = document.getElementById('noteImages');
+                const dotsContainer = document.querySelector('.slider-dots');
+                
+                post.images.forEach((imgUrl, index) => {
+                    const img = document.createElement('img');
+                    img.src = imgUrl;
+                    imagesContainer.appendChild(img);
+                    
+                    const dot = document.createElement('span');
+                    dot.onclick = () => {
+                        currentImageIndex = index;
+                        imagesContainer.style.transform = `translateX(-${currentImageIndex * 100}%)`;
+                        updateDots();
+                    };
+                    dotsContainer.appendChild(dot);
+                });
+                
+                totalImages = post.images.length;
+                // 重置图片位置到第一张
+                imagesContainer.style.transform = 'translateX(0)';
+                updateDots();
+            } else {
+                document.querySelector('.image-slider').style.display = 'none';
+            }
+
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('shareButton').style.display = 'inline-block';
+        }
+
+        // 从URL获取参数
+        function getUrlParams() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return {
+                id: urlParams.get('id'),
+                identifier: urlParams.get('identifier')
+            };
+        }
+
+        // 修改初始化函数
         async function initPage() {
             try {
-                // 检测安卓微信环境并自动跳转
                 if (isWechat() && isAndroid()) {
                     console.log('检测到安卓微信环境，准备跳转到外部浏览器');
                     document.getElementById('loading').textContent = '点击右上角三个点后，点击默认浏览器打开...';
@@ -189,67 +340,39 @@
                     return;
                 }
                 
-                const postId = getPostId();
+                const { id, identifier } = getUrlParams();
+                const postId = id || identifier;
+                
                 if (!postId) {
-                    showError('未提供帖子ID，请检查URL参数');
+                    showError('未提供帖子ID或identifier，请检查URL参数');
                     return;
                 }
 
-                // 并行获取数据
+                console.log('开始获取数据，参数:', { id, identifier, postId });
+
                 const [post, signature] = await Promise.all([
                     getPostData(postId),
                     getSignatureData()
                 ]);
 
-                postData = post;
-                signatureData = signature;
+                console.log('获取到的数据:', { post, signature });
 
-                // 显示笔记内容
-                if (post.title) {
-                    document.getElementById('noteTitle').textContent = post.title;
-                }
-                if (post.content) {
-                    document.getElementById('noteContent').textContent = post.content;
-                }
-                // if (post.images && post.images.length > 0) {
-                //     const imagesContainer = document.getElementById('noteImages');
-                //     post.images.forEach(imgUrl => {
-                //         const img = document.createElement('img');
-                //         img.src = imgUrl;
-                //         imagesContainer.appendChild(img);
-                //     });
-                // }
-                if (post.images && post.images.length > 0) {
-                    const imagesContainer = document.getElementById('noteImages');
-                    const dotsContainer = document.querySelector('.slider-dots');
-                    
-                    post.images.forEach((imgUrl, index) => {
-                        const img = document.createElement('img');
-                        img.src = imgUrl;
-                        imagesContainer.appendChild(img);
-                        
-                        // 添加导航点
-                        const dot = document.createElement('span');
-                        dot.onclick = () => {
-                            currentImageIndex = index;
-                            imagesContainer.style.transform = `translateX(-${currentImageIndex * 100}%)`;
-                            updateDots();
-                        };
-                        dotsContainer.appendChild(dot);
-                    });
-                    
-                    totalImages = post.images.length;
-                    updateDots();
-                    initTouchEvents();  // 初始化触摸事件
+                currentIdentifier = postId;
+                nextIdentifier = post.next_identifier || post.nextIdentifier;
+
+                updatePageData(post, signature);
+
+                // 如果有identifier参数，就显示下一篇按钮
+                if (identifier) {
+                    console.log('检测到identifier参数，显示下一篇按钮');
+                    document.getElementById('nextNoteButton').style.display = 'inline-block';
                 } else {
-                    document.querySelector('.image-slider').style.display = 'none';
+                    console.log('没有identifier参数，隐藏按钮');
+                    document.getElementById('nextNoteButton').style.display = 'none';
                 }
-                // 显示分享按钮
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('shareButton').style.display = 'inline-block';
-                
-                // 移除自动执行的分享逻辑
+                initTouchEvents();
             } catch (error) {
+                console.error('初始化失败:', error);
                 showError(`加载失败: ${error.message}`);
             }
         }
@@ -277,12 +400,6 @@
             dots.forEach((dot, index) => {
                 dot.classList.toggle('active', index === currentImageIndex);
             });
-        }
-
-        // 从URL获取ID参数
-        function getPostId() {
-            const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get('id');
         }
 
         // 检测是否在微信内置浏览器中打开
@@ -319,11 +436,26 @@
         // 获取小红书帖子数据
         async function getPostData(postId) {
             try {
-                const response = await fetch(`https://laolin.vip/api/posts/${postId}`);
+                console.log('获取帖子数据，postId:', postId);
+                
+                // 构建请求URL
+                let url = `${API_DOMAIN}/api/posts?`;
+                if (!isNaN(postId)) {
+                    url += `id=${postId}`;
+                } else {
+                    url += `identifier=${encodeURIComponent(postId)}`;
+                }
+                
+                console.log('请求URL:', url);
+                const response = await fetch(url);
+                
                 if (!response.ok) {
                     throw new Error(`获取帖子数据失败: ${response.status} ${response.statusText}`);
                 }
-                return await response.json();
+                
+                const data = await response.json();
+                console.log('获取到的数据:', data);
+                return data;
             } catch (error) {
                 console.error('获取帖子数据出错:', error);
                 throw error;
@@ -333,7 +465,7 @@
         // 获取签名数据
         async function getSignatureData() {
             try {
-                const response = await fetch('https://laolin.vip/api/signature');
+                const response = await fetch(`${API_DOMAIN}/api/signature`);
                 if (!response.ok) {
                     throw new Error(`获取签名数据失败: ${response.status} ${response.statusText}`);
                 }
@@ -390,82 +522,6 @@
             errorElement.textContent = message;
             errorElement.style.display = 'block';
             document.getElementById('loading').style.display = 'none';
-        }
-
-        // 初始化页面
-        async function initPage() {
-            try {
-                // 检测安卓微信环境并自动跳转
-                if (isWechat() && isAndroid()) {
-                    console.log('检测到安卓微信环境，准备跳转到外部浏览器');
-                    document.getElementById('loading').textContent = '点击右上角三个点后，点击默认浏览器打开...';
-                    openInBrowser();
-                    return;
-                }
-                
-                const postId = getPostId();
-                if (!postId) {
-                    showError('未提供帖子ID，请检查URL参数');
-                    return;
-                }
-
-                // 并行获取数据
-                const [post, signature] = await Promise.all([
-                    getPostData(postId),
-                    getSignatureData()
-                ]);
-
-                postData = post;
-                signatureData = signature;
-
-                // 显示笔记内容
-                if (post.title) {
-                    document.getElementById('noteTitle').textContent = post.title;
-                }
-                if (post.content) {
-                    document.getElementById('noteContent').textContent = post.content;
-                }
-                // if (post.images && post.images.length > 0) {
-                //     const imagesContainer = document.getElementById('noteImages');
-                //     post.images.forEach(imgUrl => {
-                //         const img = document.createElement('img');
-                //         img.src = imgUrl;
-                //         imagesContainer.appendChild(img);
-                //     });
-                // }
-                if (post.images && post.images.length > 0) {
-                    const imagesContainer = document.getElementById('noteImages');
-                    const dotsContainer = document.querySelector('.slider-dots');
-                    
-                    post.images.forEach((imgUrl, index) => {
-                        const img = document.createElement('img');
-                        img.src = imgUrl;
-                        imagesContainer.appendChild(img);
-                        
-                        // 添加导航点
-                        const dot = document.createElement('span');
-                        dot.onclick = () => {
-                            currentImageIndex = index;
-                            imagesContainer.style.transform = `translateX(-${currentImageIndex * 100}%)`;
-                            updateDots();
-                        };
-                        dotsContainer.appendChild(dot);
-                    });
-                    
-                    totalImages = post.images.length;
-                    updateDots();
-                    
-                    // 移除导航按钮相关判断
-                }
-                initTouchEvents(); 
-                // 显示分享按钮
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('shareButton').style.display = 'inline-block';
-                
-                // 移除自动执行的分享逻辑
-            } catch (error) {
-                showError(`加载失败: ${error.message}`);
-            }
         }
 
         // 页面加载完成后执行初始化
