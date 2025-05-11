@@ -458,14 +458,6 @@
 
         // 小红书分享函数
         function xhsFn() {
-            if (!postData || !signatureData) {
-                showError('数据加载失败，请刷新页面重试');
-                return;
-            }
-
-            console.log('分享数据:', postData);
-            console.log('签名数据:', signatureData);
-
             // 准备 verifyConfig 参数，处理不同的字段名称可能性
             const verifyConfig = {
                 appKey: "red.G8dlflGpIPdNdiYo",
