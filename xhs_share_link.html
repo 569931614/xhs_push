@@ -249,14 +249,9 @@
                     return;
                 }
 
-                const signature = await getSignatureData();
-
                 // 更新当前标识符
                 currentIdentifier = post.identifier;
                 nextIdentifier = post.next_identifier || post.nextIdentifier;
-
-                // 更新页面数据
-                updatePageData(post, signature);
 
                 // 更新按钮状态
                 document.getElementById('nextNoteButton').disabled = false;
@@ -352,7 +347,6 @@
 
                 const [post, signature] = await Promise.all([
                     getPostData(postId),
-                    getSignatureData()
                 ]);
 
                 console.log('获取到的数据:', { post, signature });
@@ -458,20 +452,6 @@
                 return data;
             } catch (error) {
                 console.error('获取帖子数据出错:', error);
-                throw error;
-            }
-        }
-
-        // 获取签名数据
-        async function getSignatureData() {
-            try {
-                const response = await fetch(`${API_DOMAIN}/api/signature`);
-                if (!response.ok) {
-                    throw new Error(`获取签名数据失败: ${response.status} ${response.statusText}`);
-                }
-                return await response.json();
-            } catch (error) {
-                console.error('获取签名数据出错:', error);
                 throw error;
             }
         }
